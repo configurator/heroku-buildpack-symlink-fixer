@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+set -e
+
+export REALPATH="$(dirname "$0")/realpath"
+export BUILD_DIR="$("$REALPATH" "$1")"
+export RUNTIME_DIR="/app"
+
+links="$(mktemp)"
+newlinks="$(mktemp)"
+
+arrow() {
+	echo "-----> $*"
+}
+
+indent() {
+	sed 's/^/       /g'
+}
+
+arrow "Detecting symlinks"
+{
+	find "$BUILD_DIR" -type l -print0 | tee "$links" | xargs -0 -n 1 echo
+} | indent
+
+arrow "Generating new links"
+{
+	linkline() {
+		from="$1"
+		to="$("$REALPATH" "$1" | sed "s#$BUILD_DIR#$RUNTIME_DIR#g")"
+		echo ln -vsT "\"$to\"" "\"$1\""
+	}
+	export -f linkline
+	cat "$links" | xargs -0 -n 1 -I {} bash -c 'linkline "$@"' _ {} | tee "$newlinks"
+} | indent
+
+arrow "Deleting old links"
+{
+	cat "$links" | xargs -0 rm -v
+} | indent
+
+arrow "Creating fixed links"
+{
+	bash "$newlinks"
+} | indent
+
+arrow "Done"
